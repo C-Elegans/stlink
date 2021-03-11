@@ -653,6 +653,8 @@ static const struct stlink_chipid_params devices[] = {
         .sram_size = 0x40000,
         .bootrom_base = 0x1fff0000, // see the memory map
         .bootrom_size = 0x7000,
+	.option_base = STM32_WB55_OPTION_BYTES_BASE,
+	.option_size = 4,
         .flags = CHIP_F_HAS_SWO_TRACING,
     },
     {
