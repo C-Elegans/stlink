@@ -191,6 +191,8 @@
 #define STM32WB_FLASH_CR_STRT       (16) /* FLASH_CR Start */
 #define STM32WB_FLASH_CR_OPTLOCK    (30) /* FLASH_CR Option Lock */
 #define STM32WB_FLASH_CR_LOCK       (31) /* FLASH_CR Lock */
+#define STM32WB_FLASH_CR_OPTSTRT    (17)
+#define STM32WB_FLASH_CR_OBL_LAUNCH (27)
 // WB Flash status register.
 #define STM32WB_FLASH_SR_BSY        (16) /* FLASH_SR Busy */
 
@@ -299,6 +301,7 @@
 #define FLASH_F2_OPT_LOCK_BIT (1u << 0)
 #define FLASH_F2_CR_STRT 16
 #define FLASH_F2_CR_LOCK 31
+
 
 #define FLASH_F2_CR_SER 1
 #define FLASH_F2_CR_SNB 3
@@ -3524,7 +3527,51 @@ static int stlink_write_option_bytes_f4(
 /**
  * Write option bytes
  * @param sl
- * @param option_byte value to write
+ * @param addr of the memory mapped option bytes
+ * @param base option bytes to write
+ * @return 0 on success, -ve on failure.
+ */
+static int stlink_write_option_bytes_wb55(stlink_t *sl, uint8_t* base, stm32_addr_t addr, uint32_t len) {
+
+    uint32_t val;
+    int ret = 0;
+
+    (void) addr;
+    (void) len;
+
+    /* Write options bytes */
+    uint32_t data;
+    write_uint32((unsigned char*) &data, *(uint32_t*) (base));
+    WLOG("Writing option bytes 0x%04x\n", data);
+    stlink_write_debug32(sl, STM32WB_FLASH_OPTR, data);
+
+    /* Wait for 'busy' bit in FLASH_SR to clear. */
+    wait_flash_busy(sl);
+
+    /* Set Options Start bit */
+    stlink_read_debug32(sl, STM32WB_FLASH_CR, &val);
+    val |= (1 << STM32WB_FLASH_CR_OPTSTRT);
+    stlink_write_debug32(sl, STM32WB_FLASH_CR, val);
+
+    /* Wait for 'busy' bit in FLASH_SR to clear. */
+    wait_flash_busy(sl);
+
+    ret = check_flash_error(sl);
+
+    /* apply options bytes immediate */
+    stlink_read_debug32(sl, STM32WB_FLASH_CR, &val);
+    val |= (1 << STM32WB_FLASH_CR_OBL_LAUNCH);
+    stlink_write_debug32(sl, STM32WB_FLASH_CR, val);
+
+    return ret;
+}
+
+/**
+ * Write option bytes
+ * @param sl
+ * @param base option bytes to write
+ * @param addr of the memory mapped option bytes
+ * @param len number of bytes to write (must be a multiple of 4)
  * @return 0 on success, -ve on failure.
  */
 static int stlink_write_option_bytes_f7(stlink_t *sl, uint8_t* base, stm32_addr_t addr, uint32_t len) {
@@ -3964,6 +4011,9 @@ int stlink_write_option_bytes(stlink_t *sl, stm32_addr_t addr, uint8_t* base, ui
     case STLINK_FLASH_TYPE_H7:
         ret = stlink_write_option_bytes_h7(sl, base, addr, len);
         break;
+    case STLINK_FLASH_TYPE_WB:
+	ret = stlink_write_option_bytes_wb55(sl, base, addr, len);
+	break;
     default:
         ELOG("Option bytes writing is currently not implemented for connected chip\n");
         break;
